@@ -1,18 +1,5 @@
 "use client";
 
-import { useState, useEffect, FormEvent } from "react";
-import { Plus, Trash2 } from "lucide-react";
-
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +11,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Trash2 } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface Task {
   id: string;
@@ -38,23 +37,12 @@ const Spinner = () => (
   </div>
 );
 
-const ErrorMessage = ({ message }: { message: string }) => (
-  <Card className="bg-destructive/10 border-destructive">
-    <CardHeader>
-      <CardTitle className="text-destructive">Error</CardTitle>
-      <CardDescription className="text-destructive/80">
-        {message}
-      </CardDescription>
-    </CardHeader>
-  </Card>
-);
-
 export default function HomePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [newDescription, setNewDescription] = useState("");
+
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
 
@@ -64,7 +52,6 @@ export default function HomePage() {
   useEffect(() => {
     const fetchTasks = async () => {
       setIsLoading(true);
-      setError(null);
       try {
         const response = await fetch(`${API_BASE_URL}/tasks`);
         if (!response.ok)
@@ -73,10 +60,12 @@ export default function HomePage() {
         setTasks(data);
       } catch (err) {
         if (err instanceof Error) {
-          setError(err.message);
+          toast.error("Failed to load tasks", { description: err.message });
         } else {
-          setError("An unknown error occurred while fetching the tasks.");
+          toast.error("An unknown error occurred while fetching tasks.");
         }
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchTasks();
@@ -84,62 +73,97 @@ export default function HomePage() {
 
   const handleAddTask = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!newTitle.trim()) {
+      toast.warning("Task title cannot be empty.");
+      return;
+    }
+    const tempId = `temp-${Date.now()}`;
+    const newTask: Task = {
+      id: tempId,
+      title: newTitle,
+      description: newDescription,
+      completed: false,
+    };
+    setTasks([newTask, ...tasks]);
+    setNewTitle("");
+    setNewDescription("");
+
     try {
       const response = await fetch(`${API_BASE_URL}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: newTitle, description: newDescription }),
       });
+
       if (!response.ok) throw new Error("Failed to add task.");
+
       const createdTask: Task = await response.json();
-      setTasks([createdTask, ...tasks]);
-      setNewTitle("");
-      setNewDescription("");
+
+      setTasks((currentTasks) =>
+        currentTasks.map((t) => (t.id === tempId ? createdTask : t))
+      );
+
+      toast.success("Task added successfully!");
     } catch (err) {
+      setTasks((currentTasks) => currentTasks.filter((t) => t.id !== tempId));
       if (err instanceof Error) {
-        setError(err.message);
+        toast.error("Failed to add task", { description: err.message });
       } else {
-        setError("An unknown error occurred while adding the task.");
+        toast.error("An unknown error occurred while adding the task.");
       }
     }
   };
 
   const handleToggleComplete = async (task: Task) => {
+    const originalTasks = tasks;
+    setTasks(
+      tasks.map((t) =>
+        t.id === task.id ? { ...t, completed: !t.completed } : t
+      )
+    );
+
     try {
       const response = await fetch(`${API_BASE_URL}/tasks/${task.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completed: !task.completed }),
       });
-      if (!response.ok) throw new Error("Failed to update task.");
-      const updatedTask: Task = await response.json();
-      setTasks(tasks.map((t) => (t.id === task.id ? updatedTask : t)));
+
+      if (!response.ok) throw new Error("Server failed to update task.");
+
+      toast.success(`Task "${task.title}" updated!`);
     } catch (err) {
+      setTasks(originalTasks);
       if (err instanceof Error) {
-        setError(err.message);
+        toast.error("Failed to update task", { description: err.message });
       } else {
-        setError("An unknown error occurred while updating the task.");
+        toast.error("An unknown error occurred while updating the task.");
       }
     }
   };
 
   const confirmDeleteTask = async () => {
     if (!taskToDelete) return;
+
+    const originalTasks = tasks;
+    setTasks(tasks.filter((t) => t.id !== taskToDelete));
+    setIsDeleteDialogOpen(false);
+
     try {
       const response = await fetch(`${API_BASE_URL}/tasks/${taskToDelete}`, {
         method: "DELETE",
       });
-      if (!response.ok) throw new Error("Failed to delete task.");
-      setTasks(tasks.filter((t) => t.id !== taskToDelete));
+      if (!response.ok) throw new Error("Server failed to delete task.");
+
+      toast.success("Task deleted successfully.");
     } catch (err) {
+      setTasks(originalTasks);
       if (err instanceof Error) {
-        setError(err.message);
+        toast.error("Failed to delete task", { description: err.message });
       } else {
-        setError("An unknown error occurred while deleting the task.");
+        toast.error("An unknown error occurred while deleting the task.");
       }
     } finally {
-      setIsDeleteDialogOpen(false);
       setTaskToDelete(null);
     }
   };
@@ -189,8 +213,6 @@ export default function HomePage() {
           <h2 className="text-2xl font-bold tracking-tight">Your Tasks</h2>
           {isLoading ? (
             <Spinner />
-          ) : error ? (
-            <ErrorMessage message={error} />
           ) : tasks.length > 0 ? (
             tasks.map((task) => (
               <Card
@@ -250,7 +272,6 @@ export default function HomePage() {
         </div>
       </main>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
