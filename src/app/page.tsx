@@ -1,103 +1,279 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useEffect, FormEvent } from "react";
+import { Plus, Trash2 } from "lucide-react";
+
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  completed: boolean;
+}
+
+const Spinner = () => (
+  <div className="flex justify-center items-center p-8">
+    <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-primary"></div>
+  </div>
+);
+
+const ErrorMessage = ({ message }: { message: string }) => (
+  <Card className="bg-destructive/10 border-destructive">
+    <CardHeader>
+      <CardTitle className="text-destructive">Error</CardTitle>
+      <CardDescription className="text-destructive/80">
+        {message}
+      </CardDescription>
+    </CardHeader>
+  </Card>
+);
+
+export default function HomePage() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
+
+  const API_BASE_URL =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`${API_BASE_URL}/tasks`);
+        if (!response.ok)
+          throw new Error("Failed to fetch tasks. Check backend & CORS.");
+        const data: Task[] = await response.json();
+        setTasks(data);
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unknown error occurred while fetching the tasks.");
+        }
+      }
+    };
+    fetchTasks();
+  }, [API_BASE_URL]);
+
+  const handleAddTask = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim()) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle, description: newDescription }),
+      });
+      if (!response.ok) throw new Error("Failed to add task.");
+      const createdTask: Task = await response.json();
+      setTasks([createdTask, ...tasks]);
+      setNewTitle("");
+      setNewDescription("");
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred while adding the task.");
+      }
+    }
+  };
+
+  const handleToggleComplete = async (task: Task) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${task.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: !task.completed }),
+      });
+      if (!response.ok) throw new Error("Failed to update task.");
+      const updatedTask: Task = await response.json();
+      setTasks(tasks.map((t) => (t.id === task.id ? updatedTask : t)));
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred while updating the task.");
+      }
+    }
+  };
+
+  const confirmDeleteTask = async () => {
+    if (!taskToDelete) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/tasks/${taskToDelete}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete task.");
+      setTasks(tasks.filter((t) => t.id !== taskToDelete));
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unknown error occurred while deleting the task.");
+      }
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setTaskToDelete(null);
+    }
+  };
+
+  const openDeleteDialog = (taskId: string) => {
+    setTaskToDelete(taskId);
+    setIsDeleteDialogOpen(true);
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="bg-background text-foreground min-h-screen">
+      <main className="container mx-auto max-w-3xl px-4 py-8 md:py-12">
+        <header className="text-center mb-8 md:mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold">Task Board</h1>
+          <p className="text-muted-foreground mt-2">
+            Organize your work and life, finally.
+          </p>
+        </header>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Add a New Task</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleAddTask} className="space-y-4">
+              <Input
+                type="text"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="Task Title (e.g., Finish project report)"
+                required
+              />
+              <Textarea
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="Add a description (optional)"
+                rows={2}
+              />
+              <Button type="submit" className="w-full">
+                <Plus className="mr-2 h-4 w-4" /> Add Task
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <h2 className="text-2xl font-bold tracking-tight">Your Tasks</h2>
+          {isLoading ? (
+            <Spinner />
+          ) : error ? (
+            <ErrorMessage message={error} />
+          ) : tasks.length > 0 ? (
+            tasks.map((task) => (
+              <Card
+                key={task.id}
+                className={`transition-all ${
+                  task.completed ? "bg-muted/50" : ""
+                }`}
+              >
+                <CardContent className="p-4 flex items-start space-x-4">
+                  <Checkbox
+                    id={`task-${task.id}`}
+                    checked={task.completed}
+                    onCheckedChange={() => handleToggleComplete(task)}
+                    className="mt-1"
+                  />
+                  <div className="flex-grow grid gap-1">
+                    <label
+                      htmlFor={`task-${task.id}`}
+                      className={`font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${
+                        task.completed
+                          ? "line-through text-muted-foreground"
+                          : ""
+                      }`}
+                    >
+                      {task.title}
+                    </label>
+                    {task.description && (
+                      <p
+                        className={`text-sm text-muted-foreground ${
+                          task.completed ? "line-through" : ""
+                        }`}
+                      >
+                        {task.description}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => openDeleteDialog(task.id)}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card className="text-center py-12">
+              <CardContent>
+                <p className="text-muted-foreground">
+                  You have no tasks yet. Add one above!
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the
+              task from the database.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteTask}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
